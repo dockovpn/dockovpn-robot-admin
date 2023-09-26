@@ -1,6 +1,17 @@
-ThisBuild / version := "0.1.0-SNAPSHOT"
+ThisBuild / version := "0.1.0"
 
 ThisBuild / scalaVersion := "2.13.12"
+
+ThisBuild / mainClass := Some("io.dockovpn.robot.admin.Main")
+ThisBuild / organization := "io.dockovpn"
+
+ThisBuild / assemblyMergeStrategy := {
+  case PathList(ps @ _*) if ps.last == "module-info.class" || ps.last == "jandex.idx" || ps.last == "validation-schema.json" || ps.last == "kube-schema.json" =>
+    MergeStrategy.discard
+  case x =>
+    val oldStrategy = (ThisBuild / assemblyMergeStrategy).value
+    oldStrategy(x)
+}
 
 val http4sVersion = "0.23.23"
 
@@ -20,3 +31,10 @@ lazy val root = (project in file("."))
       "io.circe" %% "circe-literal" % "0.14.6"
     )
   )
+
+addCommandAlias(
+  "build",
+  """|;
+     |clean;
+     |assembly;
+  """.stripMargin)
