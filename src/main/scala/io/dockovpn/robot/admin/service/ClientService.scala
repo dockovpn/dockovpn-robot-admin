@@ -1,5 +1,6 @@
 package io.dockovpn.robot.admin.service
 
+import cats.effect.IO
 import io.fabric8.kubernetes.api.model.Secret
 import io.fabric8.kubernetes.client.KubernetesClient
 
@@ -8,20 +9,28 @@ import scala.jdk.CollectionConverters._
 
 class ClientService(client: KubernetesClient, decoder: Base64.Decoder) {
   
-  def listClientConfigs(networkId: String): List[String] = {
-    val items = getSecrets(Map("dockovpn-network-id" -> networkId))
-      .map(_.getMetadata.getName)
-    
-    items
+  def listClientConfigs(networkId: String): IO[List[String]] = {
+    IO.delay(
+      getSecrets(Map("dockovpn-network-id" -> networkId))
+        .map(_.getMetadata.getName)
+    )
   }
   
-  def getClientConfig(name: String): String = {
-    val items = getSecrets()
+  def listClientConfigs: IO[List[String]] = {
+    IO.delay(
+      getSecrets()
+        .map(_.getMetadata.getName)
+    )
+  }
+  
+  def getClientConfig(name: String): IO[String] = {
+    IO.delay(
+      getSecrets()
       .filter(_.getMetadata.getName == name)
       .map(_.getData.asScala("config"))
       .map(config => decoder.decode(config).map(_.toChar).mkString)
-  
-    items.head
+      .head
+    )
   }
   
   private def getSecrets(extraLabels: Map[String, String] = Map.empty): List[Secret] = {
