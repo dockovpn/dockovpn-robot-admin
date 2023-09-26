@@ -12,7 +12,9 @@ import java.util.Base64
 object Main extends IOApp {
   private val base64Decoder = Base64.getDecoder
   private val client = new KubernetesClientBuilder().build()
-  private val clientService = new ClientService(client, base64Decoder)
+  private val watchNamespace = sys.env.getOrElse("WATCH_NAMESPACE", "dockovpn")
+  private val networkId = sys.env.getOrElse("DOCKOVPN_NETWORK_ID", "dockovpn-1")
+  private val clientService = new ClientService(client, base64Decoder, watchNamespace, networkId)
   private val clientRoutes = new ClientRoutes(clientService)
   
   override def run(args: List[String]): IO[ExitCode] =

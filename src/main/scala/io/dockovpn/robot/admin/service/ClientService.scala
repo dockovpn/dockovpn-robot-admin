@@ -7,18 +7,11 @@ import io.fabric8.kubernetes.client.KubernetesClient
 import java.util.Base64
 import scala.jdk.CollectionConverters._
 
-class ClientService(client: KubernetesClient, decoder: Base64.Decoder) {
-  
-  def listClientConfigs(networkId: String): IO[List[String]] = {
-    IO.delay(
-      getSecrets(Map("dockovpn-network-id" -> networkId))
-        .map(_.getMetadata.getName)
-    )
-  }
+class ClientService(client: KubernetesClient, decoder: Base64.Decoder, watchNamespace: String, networkId: String) {
   
   def listClientConfigs: IO[List[String]] = {
-    IO.delay(
-      getSecrets()
+    IO(
+      getSecrets(Map("dockovpn-network-id" -> networkId))
         .map(_.getMetadata.getName)
     )
   }
@@ -39,7 +32,7 @@ class ClientService(client: KubernetesClient, decoder: Base64.Decoder) {
     ) ++ extraLabels
     
     val items = client.secrets()
-      .inNamespace("dockovpn")
+      .inNamespace(watchNamespace)
       .withLabels(labels.asJava)
       .list().getItems.asScala
     
