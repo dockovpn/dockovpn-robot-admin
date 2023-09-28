@@ -4,14 +4,15 @@ import cats.effect.{ExitCode, IO, IOApp}
 import com.comcast.ip4s.IpLiteralSyntax
 import io.dockovpn.robot.admin.http.ClientRoutes
 import io.dockovpn.robot.admin.service.ClientService
-import io.fabric8.kubernetes.client.KubernetesClientBuilder
+import io.fabric8.kubernetes.client.{ConfigBuilder, KubernetesClientBuilder}
 import org.http4s.ember.server.EmberServerBuilder
 
 import java.util.Base64
 
 object Main extends IOApp {
   private val base64Decoder = Base64.getDecoder
-  private val client = new KubernetesClientBuilder().build()
+  private val config = new ConfigBuilder().withMasterUrl("https://kubernetes.default.svc").build()
+  private val client = new KubernetesClientBuilder().withConfig(config).build()
   private val watchNamespace = sys.env.getOrElse("WATCH_NAMESPACE", "dockovpn")
   private val networkId = sys.env.getOrElse("DOCKOVPN_NETWORK_ID", "dockovpn-1")
   private val clientService = new ClientService(client, base64Decoder, watchNamespace, networkId)

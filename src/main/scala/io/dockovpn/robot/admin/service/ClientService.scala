@@ -10,20 +10,24 @@ import scala.jdk.CollectionConverters._
 class ClientService(client: KubernetesClient, decoder: Base64.Decoder, watchNamespace: String, networkId: String) {
   
   def listClientConfigs: IO[List[String]] = {
-    IO(
+    IO.blocking(
       getSecrets(Map("dockovpn-network-id" -> networkId))
         .map(_.getMetadata.getName)
-    )
+    ).handleErrorWith { f =>
+      IO.println(f.getMessage) >> IO.pure(List.empty)
+    }
   }
   
   def getClientConfig(name: String): IO[String] = {
-    IO.delay(
+    IO.blocking(
       getSecrets()
       .filter(_.getMetadata.getName == name)
       .map(_.getData.asScala("config"))
       .map(config => decoder.decode(config).map(_.toChar).mkString)
       .head
-    )
+    ).handleErrorWith { f =>
+      IO.println(f.getMessage) >> IO.pure("")
+    }
   }
   
   private def getSecrets(extraLabels: Map[String, String] = Map.empty): List[Secret] = {
