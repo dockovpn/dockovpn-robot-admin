@@ -19,7 +19,7 @@ lazy val root = (project in file("."))
   .settings(
     name := "dockovpn-robot-admin",
     libraryDependencies ++= Seq(
-      "io.fabric8" % "kubernetes-client" % "6.8.1",
+      //"io.fabric8" % "kubernetes-client" % "6.8.1",
       "io.kubernetes" % "client-java" % "18.0.0" withSources() withJavadoc(),
       "org.typelevel" %% "cats-effect" % "3.5.1",
       "org.slf4j" % "slf4j-simple" % "2.0.5",
