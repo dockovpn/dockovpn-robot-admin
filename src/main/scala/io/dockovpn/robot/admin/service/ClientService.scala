@@ -1,15 +1,27 @@
 package io.dockovpn.robot.admin.service
 
 import cats.effect.IO
+import io.kubernetes.client.openapi.{ApiCallback, ApiException}
 
-import java.util.Base64
+import java.util
 import scala.jdk.CollectionConverters._
 
-class ClientService(decoder: Base64.Decoder, watchNamespace: String, networkId: String) {
+class ClientService(watchNamespace: String, networkId: String) {
   
   import io.kubernetes.client.openapi.apis.CoreV1Api
   
-  private val client = new CoreV1Api
+  private val coreV1Api = new CoreV1Api
+  
+  def createConfig: IO[String] = getPods().flatMap { pods =>
+    IO.blocking {
+      val command = "./genclient.sh"
+      val container = "dockovpn-container"
+      
+      coreV1Api.connectGetNamespacedPodExec(pods.head.getMetadata.getName, watchNamespace, command, container, true, null, true, true)
+    }
+  } handleErrorWith { t =>
+    IO(t.printStackTrace()) >> IO.println(t.getMessage) >> IO.pure("")
+  }
   
   def listClientConfigs: IO[List[String]] = {
     IO.blocking(
@@ -39,8 +51,21 @@ class ClientService(decoder: Base64.Decoder, watchNamespace: String, networkId: 
     
     val labelSelector = labels.map(p => p._1 + "=" + p._2).mkString(",")
     
-    client
+    coreV1Api
       .listNamespacedSecret(watchNamespace, null, null, null, null, labelSelector, null, null, null, null, false)
       .getItems.asScala.toList
+  }
+  
+  private def getPods(extraLabels: Map[String, String] = Map.empty) = {
+    IO.blocking {
+      val labels = Map(
+        "app" -> networkId
+      ) ++ extraLabels
+  
+      val labelSelector = labels.map(p => p._1 + "=" + p._2).mkString(",")
+  
+      coreV1Api.listNamespacedPod(watchNamespace, null, null, null, null, labelSelector, null, null, null, null, false)
+        .getItems.asScala.toList
+    }
   }
 }

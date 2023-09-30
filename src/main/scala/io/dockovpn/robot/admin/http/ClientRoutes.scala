@@ -19,5 +19,10 @@ class ClientRoutes(clientService: ClientService) {
       result <- clientService.getClientConfig(configName)
       response <- Ok(result)
     } yield response
+    
+    case GET -> Root / "new" / "config" => for {
+      result <- clientService.createConfig
+      response <- Ok(result)
+    } yield response
   }.orNotFound
 }
