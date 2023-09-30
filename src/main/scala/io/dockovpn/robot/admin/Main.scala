@@ -16,7 +16,7 @@ object Main extends IOApp {
   Configuration.setDefaultApiClient(client)
   private val watchNamespace = sys.env.getOrElse("WATCH_NAMESPACE", "dockovpn")
   private val networkId = sys.env.getOrElse("DOCKOVPN_NETWORK_ID", "dockovpn-1")
-  private val clientService = new ClientService(/*client, */base64Decoder, watchNamespace, networkId)
+  private val clientService = new ClientService(base64Decoder, watchNamespace, networkId)
   private val clientRoutes = new ClientRoutes(clientService)
   
   override def run(args: List[String]): IO[ExitCode] =
