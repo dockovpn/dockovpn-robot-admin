@@ -1,67 +1,37 @@
 package io.dockovpn.robot.admin.service
 
-import cats.effect.{IO, Temporal}
-import io.kubernetes.client.openapi.{ApiCallback, ApiException, Configuration}
+import cats.effect.IO
+import io.dockovpn.robot.admin.event.{ApiCallbackHandler, WebsocketListener}
+import io.dockovpn.robot.admin.kubernetes.RichCoreV1Api
+import io.kubernetes.client.openapi.Configuration
 import io.kubernetes.client.util.WebSockets
-import okhttp3.WebSocket
 
-import java.io.{InputStream, Reader}
-import java.util
 import scala.jdk.CollectionConverters._
 
 class ClientService(watchNamespace: String, networkId: String) {
   
-  import io.kubernetes.client.openapi.apis.CoreV1Api
-  
-  private val coreV1Api = new CoreV1Api
+  private val richCoreV1Api = new RichCoreV1Api
   
   def createConfig: IO[String] = getPods().flatMap { pods =>
     IO.blocking {
-      val command = "./genclient.sh"
+      val commands = List("./genclient.sh", "o")
       val container = "dockovpn-container"
       
       val client = Configuration.getDefaultApiClient
       
-      val call = coreV1Api.connectGetNamespacedPodExecCall(pods.head.getMetadata.getName, watchNamespace, command, container, true, null, true, true, new ApiCallback[String] {
-        override def onFailure(e: ApiException, statusCode: Int, responseHeaders: util.Map[String, util.List[String]]): Unit = println("onFailure")
-  
-        override def onSuccess(result: String, statusCode: Int, responseHeaders: util.Map[String, util.List[String]]): Unit = println("onSuccess")
-  
-        override def onUploadProgress(bytesWritten: Long, contentLength: Long, done: Boolean): Unit = println("onUploadProgress")
-  
-        override def onDownloadProgress(bytesRead: Long, contentLength: Long, done: Boolean): Unit = println("onDownloadProgress")
-      })
-      WebSockets.stream(call, client, new WebSockets.SocketListener {
-        override def open(protocol: String, socket: WebSocket): Unit = {}
-  
-        override def bytesMessage(in: InputStream): Unit = {}
-  
-        override def textMessage(in: Reader): Unit = {
-          import java.io.BufferedReader
-          import java.io.IOException
-          try {
-            val reader = new BufferedReader(in)
-            var line = reader.readLine
-            while ( {
-              line != null
-            }) {
-              System.out.println(line)
+      val call = richCoreV1Api.connectGetNamespacedPodExecCall(
+        pods.head.getMetadata.getName,
+        watchNamespace,
+        commands,
+        container,
+        stderr = true,
+        stdin = true,
+        stdout = true,
+        tty = true,
+        ApiCallbackHandler.default
+      )
       
-              line = reader.readLine
-            }
-          } catch {
-            case ex: IOException =>
-              ex.printStackTrace()
-          }
-        }
-  
-        override def failure(t: Throwable): Unit = {
-          t.printStackTrace()
-          client.getHttpClient.dispatcher.executorService.shutdown()
-        }
-  
-        override def close(): Unit = client.getHttpClient.dispatcher.executorService.shutdown()
-      })
+      WebSockets.stream(call, client, new WebsocketListener(client))
       Thread.sleep(5000)
       ""
     }
@@ -97,8 +67,20 @@ class ClientService(watchNamespace: String, networkId: String) {
     
     val labelSelector = labels.map(p => p._1 + "=" + p._2).mkString(",")
     
-    coreV1Api
-      .listNamespacedSecret(watchNamespace, null, null, null, null, labelSelector, null, null, null, null, false)
+    richCoreV1Api
+      .listNamespacedSecret(
+        watchNamespace,
+        null,
+        null,
+        null,
+        null,
+        labelSelector,
+        null,
+        null,
+        null,
+        null,
+        false
+      )
       .getItems.asScala.toList
   }
   
@@ -110,7 +92,19 @@ class ClientService(watchNamespace: String, networkId: String) {
   
       val labelSelector = labels.map(p => p._1 + "=" + p._2).mkString(",")
   
-      coreV1Api.listNamespacedPod(watchNamespace, null, null, null, null, labelSelector, null, null, null, null, false)
+      richCoreV1Api.listNamespacedPod(
+        watchNamespace,
+        null,
+        null,
+        null,
+        null,
+        labelSelector,
+        null,
+        null,
+        null,
+        null,
+        false
+      )
         .getItems.asScala.toList
     }
   }
