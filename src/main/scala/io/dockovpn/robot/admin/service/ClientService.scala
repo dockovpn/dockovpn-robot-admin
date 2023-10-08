@@ -1,6 +1,6 @@
 package io.dockovpn.robot.admin.service
 
-import cats.effect.IO
+import cats.effect.{Deferred, IO}
 import io.dockovpn.robot.admin.event.{ApiCallbackHandler, WebsocketListener}
 import io.dockovpn.robot.admin.kubernetes.RichCoreV1Api
 import io.kubernetes.client.openapi.Configuration
@@ -13,28 +13,28 @@ class ClientService(watchNamespace: String, networkId: String) {
   private val richCoreV1Api = new RichCoreV1Api
   
   def createConfig: IO[String] = getPods().flatMap { pods =>
-    IO.blocking {
-      val commands = List("./genclient.sh", "o")
-      val container = "dockovpn-container"
-      
-      val client = Configuration.getDefaultApiClient
-      
-      val call = richCoreV1Api.connectGetNamespacedPodExecCall(
-        pods.head.getMetadata.getName,
-        watchNamespace,
-        commands,
-        container,
-        stderr = true,
-        stdin = true,
-        stdout = true,
-        tty = true,
-        ApiCallbackHandler.default
-      )
-      
-      WebSockets.stream(call, client, new WebsocketListener(client))
-      Thread.sleep(5000)
-      ""
-    }
+    val commands = List("./genclient.sh", "o")
+    val container = "dockovpn-container"
+    
+    val client = Configuration.getDefaultApiClient
+    
+    val call = richCoreV1Api.connectGetNamespacedPodExecCall(
+      pods.head.getMetadata.getName,
+      watchNamespace,
+      commands,
+      container,
+      stderr = false,
+      stdin = false,
+      stdout = true,
+      tty = false,
+      ApiCallbackHandler.default
+    )
+
+    for {
+      deferred <- Deferred[IO, String]
+      _ <- IO(WebSockets.stream(call, client, new WebsocketListener(client, deferred))).start
+      rez <- deferred.get
+    } yield rez
   } handleErrorWith { t =>
     IO(t.printStackTrace()) >> IO.println(t.getMessage) >> IO.pure("")
   }

@@ -1,12 +1,14 @@
 package io.dockovpn.robot.admin.event
 
+import cats.effect.unsafe.implicits.global
+import cats.effect.{Deferred, IO}
 import io.kubernetes.client.openapi.ApiClient
 import io.kubernetes.client.util.WebSockets
 import okhttp3.WebSocket
 
 import java.io.{InputStream, Reader}
 
-class WebsocketListener(client: ApiClient) extends WebSockets.SocketListener {
+class WebsocketListener(client: ApiClient, callback: Deferred[IO, String]) extends WebSockets.SocketListener {
   
   private var allBytes: Array[Byte] = Array.emptyByteArray
   
@@ -39,13 +41,13 @@ class WebsocketListener(client: ApiClient) extends WebSockets.SocketListener {
   
   override def failure(t: Throwable): Unit = {
     t.printStackTrace()
-    client.getHttpClient.dispatcher.executorService.shutdown()
+    //client.getHttpClient.dispatcher.executorService.shutdown()
   }
   
   override def close(): Unit = {
     val message = allBytes.map(_.toChar).mkString
-    println(s"Session message: $message")
-    client.getHttpClient.dispatcher.executorService.shutdown()
     println("Websocket closed")
+    println(callback)
+    callback.complete(message).void.unsafeRunSync()
   }
 }
