@@ -8,7 +8,7 @@ import okhttp3.WebSocket
 
 import java.io.{InputStream, Reader}
 
-class WebsocketListener(client: ApiClient, callback: Deferred[IO, String]) extends WebSockets.SocketListener {
+class WebsocketSessionListener(client: ApiClient, callback: Deferred[IO, String]) extends WebSockets.SocketListener {
   
   private var allBytes: Array[Byte] = Array.emptyByteArray
   
@@ -41,13 +41,11 @@ class WebsocketListener(client: ApiClient, callback: Deferred[IO, String]) exten
   
   override def failure(t: Throwable): Unit = {
     t.printStackTrace()
-    //client.getHttpClient.dispatcher.executorService.shutdown()
   }
   
   override def close(): Unit = {
     val message = allBytes.map(_.toChar).mkString
     println("Websocket closed")
-    println(callback)
     callback.complete(message).void.unsafeRunSync()
   }
 }

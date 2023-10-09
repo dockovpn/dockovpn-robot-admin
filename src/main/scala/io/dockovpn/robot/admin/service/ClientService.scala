@@ -1,50 +1,39 @@
 package io.dockovpn.robot.admin.service
 
 import cats.effect.{Deferred, IO}
-import io.dockovpn.robot.admin.event.{ApiCallbackHandler, WebsocketListener}
+import io.dockovpn.robot.admin.domain.ClientConfig
+import io.dockovpn.robot.admin.event.{ApiCallbackHandler, WebsocketSessionListener}
 import io.dockovpn.robot.admin.kubernetes.RichCoreV1Api
-import io.kubernetes.client.openapi.Configuration
+import io.kubernetes.client.openapi.models.{V1ObjectMeta, V1Pod, V1Secret}
+import io.kubernetes.client.openapi.{ApiException, Configuration}
 import io.kubernetes.client.util.WebSockets
+import okhttp3.Call
 
 import scala.jdk.CollectionConverters._
+import scala.util.Random
 
 class ClientService(watchNamespace: String, networkId: String) {
   
   private val richCoreV1Api = new RichCoreV1Api
   
-  def createConfig: IO[String] = getPods().flatMap { pods =>
-    val commands = List("./genclient.sh", "o")
-    val container = "dockovpn-container"
-    
-    val client = Configuration.getDefaultApiClient
-    
-    val call = richCoreV1Api.connectGetNamespacedPodExecCall(
-      pods.head.getMetadata.getName,
-      watchNamespace,
-      commands,
-      container,
-      stderr = false,
-      stdin = false,
-      stdout = true,
-      tty = false,
-      ApiCallbackHandler.default
-    )
-
-    for {
-      deferred <- Deferred[IO, String]
-      _ <- IO(WebSockets.stream(call, client, new WebsocketListener(client, deferred))).start
-      rez <- deferred.get
-    } yield rez
-  } handleErrorWith { t =>
-    IO(t.printStackTrace()) >> IO.println(t.getMessage) >> IO.pure("")
+  def createConfig: IO[String] = (for {
+    execCall <- makePodExecCall(containerName = "dockovpn-container", commands = List("./genclient.sh", "o"))
+    deferred <- Deferred[IO, String]
+    _ <- streamPodExecCall(execCall, deferred).start
+    rez <- deferred.get
+    _ <- createSecretFromConfig(ClientConfig(rez))
+  } yield rez).handleErrorWith {
+    case aex: ApiException => IO.println(aex.printStackTrace()) >> IO.pure(aex.getResponseBody)
+    case x => IO.println(x.printStackTrace()) >> IO.pure(x.getMessage)
   }
   
   def listClientConfigs: IO[List[String]] = {
     IO.blocking(
       getSecrets(Map("dockovpn-network-id" -> networkId))
         .map(_.getMetadata.getName)
-    ).handleErrorWith { f =>
-      IO.println(f.getMessage) >> IO.pure(List.empty)
+    ).handleErrorWith {
+      case aex: ApiException => IO.println(aex.printStackTrace()) >> IO.pure(List(aex.getResponseBody))
+      case x => IO.println(x.printStackTrace()) >> IO.pure(List(x.getMessage))
     }
   }
   
@@ -60,7 +49,61 @@ class ClientService(watchNamespace: String, networkId: String) {
     }
   }
   
-  private def getSecrets(extraLabels: Map[String, String] = Map.empty) = {
+  private def createSecretFromConfig(clientConfig: ClientConfig): IO[V1Secret] = IO.blocking {
+    val metaData = new V1ObjectMeta()
+    val suffix = Random.nextInt(100000)
+    metaData.setName(s"$networkId-cfg-$suffix")
+    metaData.setLabels(Map(
+      "app" -> "dockovpn-config",
+      "dockovpn-network-id" -> networkId,
+      "dockovpn-config-name" -> clientConfig.clientId
+    ).asJava)
+    
+    val data = Map("config" -> clientConfig.data)
+    
+    val secret = new V1Secret()
+    secret.setType("Opaque")
+    secret.setStringData(data.asJava)
+    secret.setMetadata(metaData)
+    
+    richCoreV1Api.createNamespacedSecret(
+      watchNamespace,
+      secret,
+      null,
+      null,
+      null,
+      null
+    )
+  }
+  
+  private def streamPodExecCall(call: Call, callback: Deferred[IO, String]): IO[Unit] = IO {
+    val client = Configuration.getDefaultApiClient
+    
+    WebSockets.stream(
+      call,
+      client,
+      new WebsocketSessionListener(client, callback)
+    )
+  }
+  
+  private def makePodExecCall(containerName: String, commands: List[String]): IO[Call] = for {
+    podName <- getDockovpnCorePod().map(_.getMetadata.getName)
+    call <- IO {
+      richCoreV1Api.connectGetNamespacedPodExecCall(
+        podName,
+        watchNamespace,
+        commands,
+        containerName,
+        stderr = false,
+        stdin = false,
+        stdout = true,
+        tty = false,
+        ApiCallbackHandler.default
+      )
+    }
+  } yield call
+  
+  private def getSecrets(extraLabels: Map[String, String] = Map.empty): List[V1Secret] = {
     val labels = Map(
       "app" -> "dockovpn-config"
     ) ++ extraLabels
@@ -83,6 +126,8 @@ class ClientService(watchNamespace: String, networkId: String) {
       )
       .getItems.asScala.toList
   }
+  
+  private def getDockovpnCorePod(): IO[V1Pod] = getPods().map(_.head)
   
   private def getPods(extraLabels: Map[String, String] = Map.empty) = {
     IO.blocking {
